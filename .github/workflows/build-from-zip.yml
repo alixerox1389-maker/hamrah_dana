@@ -24,7 +24,12 @@ jobs:
           unzip -o hamrah_dana_mobile_ready.zip -d .
           sed -i 's/8\.3\.2/8.5.2/g' android/settings.gradle
           sed -i 's/gradle-8\.4/gradle-8.7/g' android/gradle/wrapper/gradle-wrapper.properties
-
+      - name: Check Android versions
+        run: |
+          echo "SETTINGS GRADLE:"
+          cat android/settings.gradle
+          echo "GRADLE WRAPPER:"
+          cat android/gradle/wrapper/gradle-wrapper.properties
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
