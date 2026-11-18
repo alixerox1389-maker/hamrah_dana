@@ -15,7 +15,11 @@ jobs:
 
       - name: Extract project
         run: unzip -o hamrah_dana_mobile_ready.zip -d .
-
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
