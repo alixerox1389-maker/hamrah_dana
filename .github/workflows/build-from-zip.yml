@@ -1,51 +1,67 @@
 name: Build Hamrah Dana APK
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+push:
+branches:
+- main
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+build:
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-      - name: Extract project
-        run: |
-          unzip -o hamrah_dana_mobile_ready.zip -d .
-          sed -i 's/8\.3\.2/8.5.2/g' android/settings.gradle
-          sed -i 's/gradle-8\.4/gradle-8.7/g' android/gradle/wrapper/gradle-wrapper.properties
+  - name: Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Check Android versions
-        run: |
-          echo "SETTINGS GRADLE:"
-          cat android/settings.gradle
-          echo "GRADLE WRAPPER:"
-          cat android/gradle/wrapper/gradle-wrapper.properties
+  - name: Setup Flutter
+    uses: subosito/flutter-action@v2
+    with:
+      channel: stable
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+  - name: Extract project
+    run: |
+      mkdir -p source
+      unzip -q hamrah_dana_mobile_ready.zip -d source
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
+      PUBSPEC_PATH="$(find source -name pubspec.yaml -print -quit)"
 
-      - name: Get dependencies
-        run: flutter pub get
+      if [ -z "$PUBSPEC_PATH" ]; then
+        echo "ERROR: pubspec.yaml not found"
+        exit 1
+      fi
 
-      - name: Build APK
-        run: flutter build apk --release
+      PROJECT_DIR="$(dirname "$PUBSPEC_PATH")"
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: hamrah-dana-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+      rsync -a \
+        --exclude='.github/' \
+        --exclude='android/' \
+        "$PROJECT_DIR"/ ./
+
+  - name: Generate Android project
+    run: |
+      flutter create \
+        --platforms=android \
+        --org com.hamrahdana \
+        --project-name hamrah_dana \
+        /tmp/hamrah_dana_scaffold
+
+      cp -a /tmp/hamrah_dana_scaffold/android ./android
+
+  - name: Get dependencies
+    run: flutter pub get
+
+  - name: Build APK
+    run: flutter build apk --release
+
+  - name: Upload APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: hamrah-dana-apk
+      path: build/app/outputs/flutter-apk/app-release.apk
