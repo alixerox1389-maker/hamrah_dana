@@ -1,79 +1,53 @@
 name: Build Hamrah Dana APK
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+push:
+branches:
+- main
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+build:
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+  - name: Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
+  - name: Setup Flutter
+    uses: subosito/flutter-action@v2
+    with:
+      channel: stable
 
-      - name: Extract project
-        run: |
-          mkdir -p source
+  - name: Extract project
+    run: |
+      set -e
+      mkdir -p source
+      unzip -o hamrah_dana_clean_project.zip -d source
+      cp -a source/. .
 
-          ZIP_FILE="hamrah_dana_mobile_ready (1).zip"
+  - name: Generate Android project
+    run: |
+      flutter create \
+        --platforms=android \
+        --org com.hamrahdana \
+        --project-name hamrah_dana \
+        .
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            ZIP_FILE="hamrah_dana_mobile_ready.zip"
-          fi
+  - name: Get dependencies
+    run: flutter pub get
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "Project ZIP not found"
-            exit 1
-          fi
+  - name: Build APK
+    run: flutter build apk --release
 
-          unzip -q "$ZIP_FILE" -d source
-
-          PUBSPEC_PATH="$(find source -name pubspec.yaml -print -quit)"
-
-          if [ -z "$PUBSPEC_PATH" ]; then
-            echo "pubspec.yaml not found"
-            exit 1
-          fi
-
-          PROJECT_DIR="$(dirname "$PUBSPEC_PATH")"
-
-          rsync -a \
-            --exclude='.github/' \
-            --exclude='android/' \
-            "$PROJECT_DIR"/ ./
-
-      - name: Generate Android project
-        run: |
-          flutter create \
-            --platforms=android \
-            --org com.hamrahdana \
-            --project-name hamrah_dana \
-            /tmp/hamrah_dana_scaffold
-
-          cp -a /tmp/hamrah_dana_scaffold/android ./android
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Build APK
-        run: flutter build apk --release
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: hamrah-dana-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+  - name: Upload APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: hamrah-dana-apk
+      path: build/app/outputs/flutter-apk/app-release.apk
