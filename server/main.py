@@ -1,47 +1,77 @@
-import os
-from fastapi import FastAPI, HTTPException
+import re
+from fastapi import FastAPI
 from pydantic import BaseModel
-from openai import OpenAI
 
 app = FastAPI(title="Hamrah Dana API")
 
 class ChatRequest(BaseModel):
-    message: str
+message: str
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+return {"status": "ok"}
+
+def answer_question(message):
+text = message.strip().lower()
+
+if any(word in text for word in ["سلام", "درود", "hello"]):
+    return "سلام! من همراه دانا هستم؛ دستیار آموزشی تو در دنیای برق و الکترونیک. چطور می‌توانم کمکت کنم؟"
+
+if "قانون اهم" in text:
+    return (
+        "قانون اهم رابطه ولتاژ، جریان و مقاومت را بیان می‌کند:\n"
+        "V = I × R\n"
+        "ولتاژ بر حسب ولت، جریان بر حسب آمپر و مقاومت بر حسب اهم است."
+    )
+
+if "مقاومت" in text:
+    return (
+        "مقاومت قطعه‌ای الکترونیکی است که در برابر عبور جریان الکتریکی "
+        "مخالفت می‌کند. واحد اندازه‌گیری آن اهم (Ω) است."
+    )
+
+if "خازن" in text:
+    return (
+        "خازن قطعه‌ای است که انرژی الکتریکی را در میدان الکتریکی ذخیره می‌کند. "
+        "واحد ظرفیت آن فاراد (F) است."
+    )
+
+if "دیود" in text:
+    return (
+        "دیود قطعه‌ای نیمه‌رساناست که معمولاً جریان را در یک جهت عبور می‌دهد "
+        "و در جهت مخالف مانع عبور آن می‌شود."
+    )
+
+if "ترانزیستور" in text:
+    return (
+        "ترانزیستور قطعه‌ای نیمه‌رسانا است که می‌تواند برای تقویت سیگنال "
+        "یا قطع و وصل جریان در مدار استفاده شود."
+    )
+
+if "ولتاژ" in text:
+    return (
+        "ولتاژ اختلاف پتانسیل الکتریکی بین دو نقطه است. "
+        "واحد آن ولت (V) است."
+    )
+
+if "جریان" in text:
+    return (
+        "جریان الکتریکی مقدار بار الکتریکی عبوری از یک نقطه در واحد زمان است. "
+        "واحد آن آمپر (A) است."
+    )
+
+if "الکترونیک" in text:
+    return (
+        "الکترونیک شاخه‌ای از دانش برق است که به بررسی و استفاده از قطعات "
+        "و مدارهای الکترونیکی می‌پردازد."
+    )
+
+return (
+    "سؤال خوبی پرسیدی! من در نسخه آزمایشی همراه دانا هستم و هنوز "
+    "به یک مدل هوش مصنوعی کامل متصل نشده‌ام. "
+    "لطفاً سؤالت را درباره مباحث مقدماتی الکترونیک دقیق‌تر مطرح کن."
+)
 
 @app.post("/chat")
 def chat(body: ChatRequest):
-    api_key = os.getenv("OPENAI_API_KEY")
-    model = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
-
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="API key is not configured."
-        )
-
-    try:
-        client = OpenAI(api_key=api_key)
-
-        response = client.responses.create(
-            model=model,
-            tools=[{"type": "web_search"}],
-            input=(
-                "تو دستیار هوشمند همراه دانا هستی. "
-                "به فارسی روان، دقیق و قابل فهم پاسخ بده. "
-                "اگر لازم بود از جست‌وجوی وب استفاده کن. "
-                "پاسخ را متناسب با سن کاربر و ایمن ارائه بده.\n\n"
-                + body.message
-            )
-        )
-
-        return {"answer": response.output_text}
-
-    except Exception:
-        raise HTTPException(
-            status_code=502,
-            detail="AI service request failed."
-        )
+return {"answer": answer_question(body.message)}
