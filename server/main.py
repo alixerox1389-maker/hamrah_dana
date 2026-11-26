@@ -1,48 +1,100 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+import os
+from typing import Annotated
 
-app = FastAPI(title="Hamrah Dana API")
+from fastapi import FastAPI, HTTPException
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    OpenAI,
+    RateLimitError,
+)
+from pydantic import BaseModel, Field
+
+app = FastAPI(title="Hamrah Dana API", version="1.1.0")
+
+MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+_client: OpenAI | None = None
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: Annotated[str, Field(min_length=1, max_length=8000)]
 
 
-RESPONSES = {
-    "سلام": "سلام! من همراه دانا هستم؛ دستیار آموزشی تو در دنیای برق و الکترونیک.",
-    "درود": "درود! خوش آمدی. چطور می‌توانم کمکت کنم؟",
-    "قانون اهم": "قانون اهم: V = I × R. ولتاژ برابر حاصل‌ضرب جریان در مقاومت است.",
-    "مقاومت": "مقاومت قطعه‌ای است که در برابر عبور جریان الکتریکی مخالفت می‌کند. واحد آن اهم است.",
-    "خازن": "خازن قطعه‌ای است که انرژی الکتریکی را در میدان الکتریکی ذخیره می‌کند.",
-    "دیود": "دیود قطعه‌ای نیمه‌رساناست که معمولاً جریان را در یک جهت عبور می‌دهد.",
-    "ترانزیستور": "ترانزیستور برای تقویت سیگنال یا کنترل جریان الکتریکی استفاده می‌شود.",
-    "ولتاژ": "ولتاژ اختلاف پتانسیل الکتریکی بین دو نقطه است. واحد آن ولت است.",
-    "جریان": "جریان الکتریکی مقدار بار الکتریکی عبوری در واحد زمان است. واحد آن آمپر است.",
-    "الکترونیک": "الکترونیک شاخه‌ای از دانش برق است که به بررسی قطعات و مدارهای الکترونیکی می‌پردازد."
-}
+def get_client() -> OpenAI:
+    global _client
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="AI service is not configured on the server.",
+        )
+    if _client is None:
+        _client = OpenAI(api_key=api_key, timeout=90.0, max_retries=1)
+    return _client
 
 
-DEFAULT_ANSWER = (
-    "من همراه دانا هستم. هنوز پاسخ این سؤال در پایگاه آموزشی من ثبت نشده است. "
-    "فعلاً نسخه آزمایشی من فعال است."
-)
-
-
-def answer_question(message):
-    text = message.strip().lower()
-
-    for keyword, answer in RESPONSES.items():
-        if keyword in text:
-            return answer
-
-    return DEFAULT_ANSWER
+@app.get("/")
+def root():
+    return {
+        "service": "Hamrah Dana API",
+        "status": "ok",
+        "health": "/health",
+    }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "ai_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "model": MODEL,
+    }
 
 
 @app.post("/chat")
 def chat(body: ChatRequest):
-    return {"answer": answer_question(body.message)}
+    prompt = (
+        "تو دستیار آموزشی همراه دانا هستی. "
+        "تمرکز اصلی تو آموزش برق و الکترونیک است و در کنار آن به پرسش‌های عمومی "
+        "نیز پاسخ می‌دهی. به فارسی روان، دقیق و قابل فهم پاسخ بده. "
+        "برای مسائل آموزشی، مرحله‌به‌مرحله توضیح بده و اگر داده‌ای کافی نیست "
+        "شفاف سؤال تکمیلی بپرس. پاسخ‌ها باید متناسب با سن کاربر و ایمن باشند.\n\n"
+        + body.message.strip()
+    )
+
+    try:
+        client = get_client()
+        result = client.responses.create(
+            model=MODEL,
+            input=prompt,
+        )
+        answer = (result.output_text or "").strip()
+        if not answer:
+            raise HTTPException(
+                status_code=502,
+                detail="AI service returned an empty response.",
+            )
+        return {"answer": answer}
+    except HTTPException:
+        raise
+    except APITimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="AI service timed out.",
+        )
+    except APIConnectionError:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not connect to AI service.",
+        )
+    except RateLimitError:
+        raise HTTPException(
+            status_code=429,
+            detail="AI service rate limit or quota reached.",
+        )
+    except APIStatusError:
+        raise HTTPException(
+            status_code=502,
+            detail="AI service rejected the request.",
+        )
