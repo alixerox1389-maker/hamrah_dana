@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(title="Hamrah Dana API", version="1.1.0")
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+MODEL = os.getenv("OPENAI_MODEL", "gpt-6-luna")
 _client: OpenAI | None = None
 
 
@@ -68,6 +68,7 @@ def chat(body: ChatRequest):
         result = client.responses.create(
             model=MODEL,
             input=prompt,
+            max_output_tokens=1200,
         )
         answer = (result.output_text or "").strip()
         if not answer:
