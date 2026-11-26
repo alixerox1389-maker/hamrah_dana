@@ -1,37 +1,124 @@
-import os
+import re
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
-from openai import (
-    APIConnectionError,
-    APIStatusError,
-    APITimeoutError,
-    OpenAI,
-    RateLimitError,
-)
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Hamrah Dana API", version="1.1.0")
-
-MODEL = os.getenv("OPENAI_MODEL", "gpt-6-luna")
-_client: OpenAI | None = None
+app = FastAPI(title="Hamrah Dana API", version="1.2.0")
 
 
 class ChatRequest(BaseModel):
     message: Annotated[str, Field(min_length=1, max_length=8000)]
 
 
-def get_client() -> OpenAI:
-    global _client
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="AI service is not configured on the server.",
+def normalize(text: str) -> str:
+    table = str.maketrans("ي ك۰۱٢۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "ی ک۰۱23456789۰۱۲۳۴۵۶۷۸۹")
+    return re.sub(r"\s+", " ", text.translate(table).strip().lower())
+
+
+def offline_answer(message: str) -> str:
+    q = normalize(message)
+
+    if any(x in q for x in ("سلام", "درود", "خوبی", "چطوری")):
+        return "سلام! من همراه دانا هستم. در حال حاضر در حالت رایگانِ آموزشی کار می‌کنم و می‌توانم درباره مباحث پایه برق و الکترونیک راهنمایی بدهم. سوالت را بپرس."
+
+    if any(x in q for x in ("قانون اهم", "ohm", "محاسبه جریان", "جریان چقدر", "ولتاژ چقدر")):
+        return (
+            "قانون اهم رابطه ولتاژ، جریان و مقاومت را نشان می‌دهد:\n"
+            "V = I × R\n"
+            "V ولتاژ بر حسب ولت، I جریان بر حسب آمپر و R مقاومت بر حسب اهم است.\n"
+            "برای پیدا کردن جریان: I = V ÷ R\n"
+            "مثال: اگر ولتاژ ۱۲ ولت و مقاومت ۶ اهم باشد، جریان برابر ۲ آمپر است. "
+            "اگر مقادیر مسئله‌ات را بفرستی، مرحله‌به‌مرحله حل می‌کنم."
         )
-    if _client is None:
-        _client = OpenAI(api_key=api_key, timeout=90.0, max_retries=1)
-    return _client
+
+    if "مقاومت" in q or "resistor" in q:
+        return (
+            "مقاومت قطعه‌ای است که در برابر عبور جریان الکتریکی محدودیت ایجاد می‌کند. "
+            "واحد آن اهم (Ω) است. مقاومت‌ها برای محدودکردن جریان، تقسیم ولتاژ و تنظیم شرایط کار مدار استفاده می‌شوند.\n"
+            "نکته: در یک مقاومت ثابت، با افزایش ولتاژ دو سر آن، جریان نیز طبق قانون اهم افزایش می‌یابد."
+        )
+
+    if "خازن" in q or "capacitor" in q:
+        return (
+            "خازن قطعه‌ای است که انرژی الکتریکی را در میدان الکتریکی ذخیره می‌کند. "
+            "واحد ظرفیت آن فاراد (F) است. خازن‌ها در صاف‌کردن ولتاژ، فیلترکردن نویز و مدارهای زمان‌ساز کاربرد دارند.\n"
+            "دو نوع رایج: سرامیکی و الکترولیتی. خازن الکترولیتی قطب مثبت و منفی دارد و باید درست نصب شود."
+        )
+
+    if "دیود" in q or "diode" in q:
+        return (
+            "دیود قطعه‌ای نیمه‌رساناست که در حالت عادی جریان را عمدتاً در یک جهت عبور می‌دهد. "
+            "پایه آند و کاتد دارد. در بسیاری از دیودهای معمولی، نوار روی بدنه سمت کاتد را نشان می‌دهد. "
+            "کاربردها: یکسوسازی، محافظت در برابر اتصال معکوس و جداسازی مسیرهای جریان."
+        )
+
+    if "ال ای دی" in q or "led" in q or "لامپ smd" in q or "لامپ اس ام دی" in q:
+        return (
+            "LED نوعی دیود نورگسیل است؛ با عبور جریان در جهت صحیح نور تولید می‌کند. "
+            "برای استفاده در مدار معمولاً باید جریان آن محدود شود؛ این کار اغلب با مقاومت سری انجام می‌شود. "
+            "اتصال مستقیم LED معمولی به منبع ولتاژ بدون محدودکننده جریان می‌تواند به آن آسیب بزند."
+        )
+
+    if "ترانزیستور" in q or "transistor" in q:
+        return (
+            "ترانزیستور قطعه نیمه‌رسانایی است که معمولاً برای تقویت سیگنال یا قطع‌و‌وصل الکترونیکی به کار می‌رود. "
+            "در نوع BJT سه پایه بیس، کلکتور و امیتر دارد. جریان کوچک بیس می‌تواند جریان بزرگ‌تری بین کلکتور و امیتر را کنترل کند. "
+            "پایه‌بندی دقیق را باید از دیتاشیت همان شماره قطعه بررسی کرد."
+        )
+
+    if "مدار سری" in q or "سری" == q:
+        return (
+            "در اتصال سری، قطعات پشت سر هم در یک مسیر قرار می‌گیرند. جریان عبوری از همه قطعات یکسان است "
+            "و ولتاژ منبع بین آن‌ها تقسیم می‌شود. مقاومت معادل مقاومت‌های سری برابر مجموع آن‌هاست: "
+            "Rکل = R1 + R2 + ..."
+        )
+
+    if "موازی" in q:
+        return (
+            "در اتصال موازی، دو سر هر قطعه به دو گره مشترک وصل می‌شود. ولتاژ دو سر شاخه‌ها یکسان است "
+            "و جریان بین شاخه‌ها تقسیم می‌شود. برای دو مقاومت موازی: "
+            "Rکل = (R1 × R2) ÷ (R1 + R2)."
+        )
+
+    if "توان" in q and ("الکتریکی" in q or "مدار" in q or "وات" in q):
+        return (
+            "توان الکتریکی نرخ مصرف یا انتقال انرژی است و با وات (W) سنجیده می‌شود. "
+            "در مدارهای ساده: P = V × I. همچنین برای مقاومت: P = I² × R یا P = V² ÷ R. "
+            "هنگام انتخاب مقاومت باید توان نامی آن از توان تلف‌شده در مدار بیشتر باشد."
+        )
+
+    if "برد" in q and ("چاپی" in q or "pcb" in q):
+        return (
+            "برد مدار چاپی (PCB) صفحه‌ای عایق است که مسیرهای رسانا روی آن، قطعات الکترونیکی را به هم متصل می‌کنند. "
+            "برد چاپی باعث نظم، استحکام و تکرارپذیری بهتر مدار می‌شود. قبل از لحیم‌کاری، جای قطعات و جهت قطعات قطب‌دار را بررسی کن."
+        )
+
+    if "لحیم" in q or "هویه" in q:
+        return (
+            "لحیم‌کاری برای ایجاد اتصال الکتریکی و مکانیکی بین پایه قطعه و سطح مسی برد انجام می‌شود. "
+            "نوک هویه و محل اتصال باید تمیز باشند؛ حرارت را فقط به اندازه لازم اعمال کن و از تهویه مناسب استفاده کن. "
+            "به نوک هویه داغ دست نزن و پس از کار آن را در پایه مخصوص قرار بده."
+        )
+
+    if any(x in q for x in ("برق گرفتگی", "برق شهر", "۲۲۰ ولت", "220 ولت", "برق شهری")):
+        return (
+            "هشدار ایمنی: برق شهر می‌تواند بسیار خطرناک و حتی مرگبار باشد. برای تمرین‌های آموزشی از باتری کم‌ولتاژ و مدارهای ایمن استفاده کن. "
+            "بدون نظارت فرد متخصص، دستگاه را به برق شهر وصل نکن و داخل منبع تغذیه یا وسیله متصل به برق شهر را باز نکن."
+        )
+
+    if any(x in q for x in ("الکترونیک چیست", "برق چیست")):
+        return (
+            "الکترونیک شاخه‌ای از دانش مهندسی است که رفتار و کنترل جریان الکتریکی را در قطعات و مدارها بررسی می‌کند. "
+            "با مدارهای الکترونیکی می‌توان سیگنال‌ها را دریافت، پردازش، تقویت و کنترل کرد."
+        )
+
+    return (
+        "می‌خواهم درست راهنمایی‌ات کنم. در حال حاضر نسخه رایگان همراه دانا بدون اتصال به سرویس هوش مصنوعی بیرونی اجرا می‌شود؛ "
+        "بنابراین دانش آن محدود به پاسخ‌های آموزشی پایه است.\n"
+        "لطفاً سوالت را دقیق‌تر بنویس یا نام قطعه، موضوع درسی، فرمول یا متن مسئله را بفرست تا در حد اطلاعات موجود کمک کنم. "
+        "برای پاسخ هوشمند و آزاد به همه موضوعات، بعداً باید یک موتور هوش مصنوعی مجاز به سرور متصل شود."
+    )
 
 
 @app.get("/")
@@ -47,55 +134,12 @@ def root():
 def health():
     return {
         "status": "ok",
-        "ai_configured": bool(os.getenv("OPENAI_API_KEY")),
-        "model": MODEL,
+        "ai_configured": False,
+        "mode": "offline_educational",
+        "message": "Free educational fallback is active; no API key is required.",
     }
 
 
 @app.post("/chat")
 def chat(body: ChatRequest):
-    prompt = (
-        "تو دستیار آموزشی همراه دانا هستی. "
-        "تمرکز اصلی تو آموزش برق و الکترونیک است و در کنار آن به پرسش‌های عمومی "
-        "نیز پاسخ می‌دهی. به فارسی روان، دقیق و قابل فهم پاسخ بده. "
-        "برای مسائل آموزشی، مرحله‌به‌مرحله توضیح بده و اگر داده‌ای کافی نیست "
-        "شفاف سؤال تکمیلی بپرس. پاسخ‌ها باید متناسب با سن کاربر و ایمن باشند.\n\n"
-        + body.message.strip()
-    )
-
-    try:
-        client = get_client()
-        result = client.responses.create(
-            model=MODEL,
-            input=prompt,
-            max_output_tokens=1200,
-        )
-        answer = (result.output_text or "").strip()
-        if not answer:
-            raise HTTPException(
-                status_code=502,
-                detail="AI service returned an empty response.",
-            )
-        return {"answer": answer}
-    except HTTPException:
-        raise
-    except APITimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail="AI service timed out.",
-        )
-    except APIConnectionError:
-        raise HTTPException(
-            status_code=502,
-            detail="Could not connect to AI service.",
-        )
-    except RateLimitError:
-        raise HTTPException(
-            status_code=429,
-            detail="AI service rate limit or quota reached.",
-        )
-    except APIStatusError:
-        raise HTTPException(
-            status_code=502,
-            detail="AI service rejected the request.",
-        )
+    return {"answer": offline_answer(body.message)}
