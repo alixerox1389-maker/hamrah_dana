@@ -1,4 +1,8 @@
+import json
+import os
 import re
+import urllib.error
+import urllib.request
 from typing import Annotated
 
 from fastapi import FastAPI
@@ -158,16 +162,77 @@ def root():
     }
 
 
+def cloudflare_answer(message: str) -> str:
+    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    api_token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+    if not account_id or not api_token:
+        raise RuntimeError("Cloudflare credentials are not configured")
+
+    endpoint = (
+        "https://api.cloudflare.com/client/v4/accounts/"
+        + account_id
+        + "/ai/run/@cf/meta/llama-3.1-8b-instruct"
+    )
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are Hamrah Dana, a helpful Persian-speaking tutor. "
+                    "Prioritize beginner electricity/electronics education. "
+                    "Explain concepts simply and step by step. For calculations, "
+                    "show formulas, units, and intermediate steps. Do not invent facts. "
+                    "Give concise general-knowledge answers when asked. For mains "
+                    "electricity or hazardous circuits, give safety-first high-level "
+                    "guidance and direct the learner to a qualified adult."
+                ),
+            },
+            {"role": "user", "content": message},
+        ],
+        "max_tokens": 900,
+    }
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=75) as response:
+        result = json.loads(response.read().decode("utf-8"))
+
+    if not result.get("success"):
+        raise RuntimeError("Cloudflare API returned an unsuccessful response")
+    answer = (result.get("result") or {}).get("response")
+    if not isinstance(answer, str) or not answer.strip():
+        raise RuntimeError("Cloudflare returned an empty response")
+    return answer.strip()
+
+
 @app.get("/health")
 def health():
+    configured = bool(
+        os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        and os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+    )
     return {
         "status": "ok",
-        "ai_configured": False,
-        "mode": "offline_educational",
-        "message": "Free educational fallback is active; no API key is required.",
+        "ai_configured": configured,
+        "mode": "cloudflare_workers_ai" if configured else "offline_educational",
     }
 
 
 @app.post("/chat")
 def chat(body: ChatRequest):
-    return {"answer": offline_answer(body.message)}
+    try:
+        return {
+            "answer": cloudflare_answer(body.message),
+            "mode": "cloudflare_workers_ai",
+        }
+    except Exception:
+        return {
+            "answer": offline_answer(body.message),
+            "mode": "offline_fallback",
+        }
